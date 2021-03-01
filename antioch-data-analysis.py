@@ -51,7 +51,8 @@ for root, subdirs, files in os.walk(dataDirectory):
                                           longitude=row[6],
                                           watchTimeMinutes=row[7],
                                           resolution=row[8],
-                                          userAgent=row[9]))
+                                          userAgent=row[9],
+                                          service=filename[:-4]))
 
 # Get count by country
 result = db.query("SELECT COUNT(ipAddress), country from data GROUP BY country ORDER BY country")
@@ -100,6 +101,64 @@ result = db.query("SELECT COUNT(localDatestamp), localDatestamp from data GROUP 
 for row in result:
     print(f'  {row["localDatestamp"]}: {row["COUNT(localDatestamp)"]}')
 print()
+
+
+# Count by date and service
+print("Count by Date and Service:")
+datestampList = []
+datestamps = db.query("SELECT localDatestamp FROM data GROUP BY localDatestamp ORDER BY localDatestamp")
+for datestamp in datestamps:
+    datestampList.append(datestamp["localDatestamp"])
+print(datestampList)
+services = db.query("SELECT service FROM data GROUP BY service ORDER BY service")
+for service in services:
+    data = []
+    datestampList = []
+    datestamps = db.query("SELECT localDatestamp FROM data GROUP BY localDatestamp ORDER BY localDatestamp")
+    for datestamp in datestamps:
+        datestampList.append(datestamp["localDatestamp"])
+        result = db.query(f'SELECT COUNT(*) FROM data WHERE localDatestamp=\'{datestamp["localDatestamp"]}\' AND service=\'{service["service"]}\' GROUP BY localDatestamp')
+        hadRows = False
+        for row in result:
+            hadRows = True
+            data.append(row["COUNT(*)"])
+        if not hadRows:
+            datestampList.pop(-1)
+            #data.append(0)
+    print(service["service"] + " " + str(data))
+    plt.plot(datestampList, data, label=service["service"])
+plt.legend()
+plt.show()
+exit()
+
+
+for datestamp in datestamps:
+    print(datestamp["localDatestamp"])
+    result = db.query(f'SELECT COUNT(*), service FROM data WHERE localDatestamp=\'{datestamp["localDatestamp"]}\' GROUP BY service ORDER BY service')
+    for row in result:
+        print(row)
+exit()
+
+
+
+
+result = db.query("SELECT COUNT(*), localDatestamp, service FROM data WHERE watchTimeMinutes > 7 GROUP BY localDatestamp, service ORDER BY localDatestamp, service")
+for row in result:
+    if row["service"] not in data.keys():
+        data[row["service"]] = []
+    data[row["service"]].append(row["COUNT(*)"])
+    if row["localDatestamp"] not in datestamps:
+        datestamps.append(row["localDatestamp"])
+    print(f'  {row["localDatestamp"]} - {row["service"]}: {row["COUNT(*)"]}')
+print()
+# Plot
+print(data)
+print(datestamps)
+exit()
+plt.plot()
+plt.legend()
+plt.show()
+
 
 # DON'T NEED A PLOT FOR NOW
 exit()
