@@ -5,6 +5,7 @@ from datetime import datetime
 from dateutil import tz
 from io import BytesIO
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import pycurl
 
@@ -31,6 +32,7 @@ cc = (cycler(color=['tab:blue',
                         (0, (1, 10)),
                         (0, (5, 10)),
                         (0, (3, 10, 1, 10))]))
+
 
 def Load_Database():
     from_zone = tz.tzutc()
@@ -92,6 +94,7 @@ def CountByCountry():
             print(f'  {row["country"]}: {row["COUNT(ipAddress)"]}')
     print()
 
+
 def CountByState():
     # Get count by state
     print("State Breakdown:")
@@ -103,55 +106,33 @@ def CountByState():
             print(f'  {row["state"]}, {row["country"]}: {row["COUNT(ipAddress)"]}')
     print()
 
-def CountByCity():
-    # Get count by city
-    print("City Breakdown:")
-    result = db.query("SELECT COUNT(ipAddress), city, state, country from data GROUP BY city ORDER BY city")
-    for row in result:
-        if row["city"] == "":
-            print(f'  <unspecified>, {row["state"]}, {row["country"]}: {row["COUNT(ipAddress)"]}')
-        else:
-            print(f'  {row["city"]}, {row["state"]}, {row["country"]}: {row["COUNT(ipAddress)"]}')
-    print()
-
-def CountByDatestamp():
-    # Count by localDatestamp
-    print("Count by Datestamp:")
-    result = db.query("SELECT COUNT(localDatestamp), localDatestamp from data GROUP BY localDatestamp ORDER BY localDatestamp")
-    for row in result:
-        print(f'  {row["localDatestamp"]}: {row["COUNT(localDatestamp)"]}')
-    print()
 
 def CountByDateAndService():
     # Count by date and service
     print("Count by Date and Service:")
-    datestampList = []
-    x = []
-    xcurr = 1
-    datestamps = db.query("SELECT localDatestamp FROM data GROUP BY localDatestamp ORDER BY localDatestamp")
-    for datestamp in datestamps:
-        datestampList.append(datestamp["localDatestamp"])
-        x.append(xcurr)
-        xcurr += 1
-    plt.xticks(x, datestampList, rotation='vertical')
-    print(datestampList)
+    datestamps = GetDatestamps()
+    plt.xticks(list(range(len(datestamps))), datestamps, rotation='vertical')
+    print(datestamps)
     services = db.query("SELECT service FROM data GROUP BY service ORDER BY service")
     for service in services:
-        data = []
-        datestampList = []
-        datestamps = db.query("SELECT localDatestamp FROM data GROUP BY localDatestamp ORDER BY localDatestamp")
+        datapoints = {}
+        datapoints['x'] = []
+        datapoints['y'] = []
         for datestamp in datestamps:
-            datestampList.append(datestamp["localDatestamp"])
-            result = db.query(f'SELECT COUNT(*) FROM data WHERE localDatestamp=\'{datestamp["localDatestamp"]}\' AND service=\'{service["service"]}\' GROUP BY localDatestamp')
+            # Want to remove out any Sunday-morning viewers that accidentally clicked the Saturday service
+            if "Sat" in service["service"] and datetime.strptime(datestamp, '%Y-%m-%d').weekday() == 6:
+                continue
+            datapoints['x'].append(datestamps.index(datestamp))
+            result = db.query(f'SELECT COUNT(*) FROM data WHERE localDatestamp=\'{datestamp}\' AND service=\'{service["service"]}\' GROUP BY localDatestamp')
             hadRows = False
             for row in result:
                 hadRows = True
-                data.append(row["COUNT(*)"])
+                datapoints['y'].append(row["COUNT(*)"])
             if not hadRows:
-                datestampList.pop(-1)
-        print(service["service"] + " " + str(data))
-        plt.plot(datestampList, data, label=service["service"])
-        for x, y in zip(datestampList, data):
+                datapoints['x'].pop(-1)
+        print(service["service"] + " " + str(datapoints))
+        QuickPlotWithTrendline(datapoints['x'], datapoints['y'], service["service"], datestamps)
+        for x, y in zip(datapoints['x'], datapoints['y']):
             label = "{:d}".format(y)
             plt.annotate(label, (x, y), textcoords="offset points", xytext=(0, 10), ha='center')
     plt.legend()
@@ -159,53 +140,13 @@ def CountByDateAndService():
     plt.xlabel("Date")
     plt.ylabel("Viewer Count")
     # COLORBLIND EXPERIMENT plt.rc('axes', prop_cycle=cc)
+    plt.savefig(os.path.join(dataDirectory, "CountByService.png"))
     plt.show()
     print()
 
-def CountByWeekNumberAndLocation():
-    # Create a chart showing X: ViewerCount, Y: weekNumber, and Legend: Location
-    print("Count by Location")
-    locations = []
-    x = []
-    y = []
-    # City-wise
-    result = db.query("SELECT state, city FROM data GROUP BY state, city ORDER BY state, city")
-    # State-wise
-    #result = db.query("SELECT state FROM data GROUP BY state ORDER BY state")
-    for row in result:
-        # City-wise
-        locations.append(f'{row["city"]}, {row["state"]}')
-        # State-wise
-        #locations.append(f'{row["state"]}')
-    result = db.query("SELECT weekNumber FROM data GROUP BY weekNumber ORDER BY weekNumber")
-    for row in result:
-        x.append(row["weekNumber"])
-    for location in locations:
-        # Remove Cedar Rapids and Marion from graph
-        if location == "Cedar Rapids, IA" or location == "Marion, IA":
-            continue
-        y = []
-        for currentWeekNumber in x:
-            # City-wise
-            result = db.query(f'SELECT COUNT(*), weekNumber FROM data WHERE state=\'{location.split(", ")[1]}\' AND city=\'{location.split(", ")[0]}\' GROUP BY weekNumber ORDER BY weekNumber')
-            # State-wise
-            #result = db.query(f'SELECT COUNT(*), weekNumber FROM data WHERE state=\'{location}\' GROUP BY weekNumber ORDER BY weekNumber')
-            dataFound = False
-            for row in result:
-                if row["weekNumber"] == currentWeekNumber:
-                    y.append(row["COUNT(*)"])
-                    dataFound = True
-            if not dataFound:
-                y.append(0)
-        plt.plot(x, y, label=location)
-    plt.legend()
-    plt.show()
-    print()
-
-# This function excludes Cedar Rapids, Marion, and Hiawatha
 def CountTopTenLocations():
+    print("Top Ten Remote Locations (excludes Cedar Rapids, Marion, & Hiawatha)")
     weekNumbers = GetWeekNumbers()
-
     count = 0
     locations = db.query('SELECT COUNT(*), city, state FROM data WHERE city<>\'\' AND city<>\'Cedar Rapids\'  AND city<>\'Marion\'  AND city<>\'Hiawatha\' GROUP BY city, state ORDER BY COUNT(*) DESC')
     for row in locations:
@@ -236,7 +177,13 @@ def CountTopTenLocations():
     plt.show()
     print()
 
-
+def WatchtimeHistogram():
+    result = db.query("SELECT watchTimeMinutes FROM data")
+    watchtimes = []
+    for row in result:
+        watchtimes.append(row["watchTimeMinutes"])
+    plt.hist(watchtimes, bins=5)
+    plt.show()
 
 def GetWeekNumbers():
     ret = []
@@ -252,9 +199,40 @@ def GetDatestamps():
         ret.append(row["localDatestamp"])
     return ret
 
+
+def QuickPlot(x, y, label=None, xticks=None):
+    plt.plot(x, y, label=label)
+    plt.xticks(range(len(xticks)), xticks)
+
+
+def QuickPlotWithTrendline(x, y, label=None, xticks=None):
+    QuickPlot(x, y, label, xticks)
+    z = np.polyfit(x, y, 1)
+    p = np.poly1d(z)
+    if label is None:
+        plt.plot(x, p(x), "--")
+    else:
+        plt.plot(x, p(x), "--", label=f'{label} - Trend')
+
 if __name__ == "__main__":
     print("ADA: Welcome to ADA, the Antioch Data Analysis tool\n")
     Load_Database()
     CountByDateAndService()
-    #CountByWeekNumberAndLocation()
     CountTopTenLocations()
+    exit()
+
+    datapoints = {}
+    xlabels = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    datapoints['x'] = [0, 1, 2, 3, 4, 5, 6, 7]
+    datapoints['y'] = [0, 1, 2, 3, 4, 5, 6, 7]
+    QuickPlotWithTrendline(datapoints['x'], datapoints['y'], "x^1", xlabels)
+    datapoints['x'] = [0, 2, 4, 6]
+    datapoints['y'] = [0, 4, 16, 36]
+    QuickPlotWithTrendline(datapoints['x'], datapoints['y'], "x^2", xlabels)
+    datapoints['x'] = [0, 1, 3, 4, 6, 7]
+    datapoints['y'] = [0, 10, 0, -10, 0, 10]
+    QuickPlotWithTrendline(datapoints['x'], datapoints['y'], "x^w/e", xlabels)
+    plt.legend()
+    plt.show()
+    plt.savefig(os.path.join(dataDirectory, "TestFigure.png"))
+    plt.close()
