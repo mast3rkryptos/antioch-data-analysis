@@ -10,7 +10,7 @@ import os
 import pycurl
 
 # Global Variables (because I am lazy and have no face)
-dataDirectory = "C:\\Users\\gwschive\\Downloads\\ADA_Data"
+dataDirectory = "C:\\project_files\\ADA_Data"
 db = dataset.connect('sqlite:///:memory:')
 cc = (cycler(color=['tab:blue',
                     'tab:orange',
@@ -64,7 +64,8 @@ def Load_Database():
                                               service=filename[:-4],
                                               weekNumber=
                                               datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(
-                                                  tzinfo=from_zone).astimezone(to_zone).isocalendar()[1]))
+                                                  tzinfo=from_zone).astimezone(to_zone).isocalendar()[1],
+                                              weekday=datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).weekday()))
 
 
 def Is_VPN():
@@ -123,7 +124,7 @@ def CountByDateAndService():
             if "Sat" in service["service"] and datetime.strptime(datestamp, '%Y-%m-%d').weekday() == 6:
                 continue
             datapoints['x'].append(datestamps.index(datestamp))
-            result = db.query(f'SELECT COUNT(*) FROM data WHERE localDatestamp=\'{datestamp}\' AND service=\'{service["service"]}\' GROUP BY localDatestamp')
+            result = db.query(f'SELECT COUNT(*) FROM data WHERE localDatestamp=\'{datestamp}\' AND service=\'{service["service"]}\' AND weekday>=5 GROUP BY localDatestamp')
             hadRows = False
             for row in result:
                 hadRows = True
@@ -177,6 +178,34 @@ def CountTopTenLocations():
     plt.show()
     print()
 
+def CountLocationsByService():
+    print("Remote Locations by Service (excludes Cedar Rapids, Marion, & Hiawatha)")
+    print("city, state service: total (average)")
+    count = len(GetWeekNumbers())
+    result = db.query('SELECT COUNT(*), city, state, service FROM data WHERE city<>\'\' AND city<>\'Cedar Rapids\' AND city<>\'Marion\'  AND city<>\'Hiawatha\' GROUP BY city, state, service ORDER BY COUNT(*) DESC')
+    for row in result:
+        averageResult = db.query(f'SELECT COUNT(*) FROM data WHERE city=\'{row["city"]}\' AND state=\'{row["state"]}\' AND service=\'{row["service"]}\' GROUP BY weekNumber ORDER BY weekNumber')
+        average = 0
+        for avgRow in averageResult:
+            average += avgRow["COUNT(*)"]
+        print(f'{row["city"]}, {row["state"]} {row["service"]}: {row["COUNT(*)"]} ({average/count})')
+    print()
+
+def GetIPsTopTenLocations():
+    print("Top Ten Remote Location IPs (excludes Cedar Rapids, Marion, & Hiawatha)")
+    count = 0
+    locations = db.query('SELECT COUNT(*), city, state FROM data WHERE city<>\'\' AND city<>\'Cedar Rapids\'  AND city<>\'Marion\'  AND city<>\'Hiawatha\' GROUP BY city, state ORDER BY COUNT(*) DESC')
+    for row in locations:
+        if count >= 10:
+            break
+        count += 1
+        print(f'{row["city"]}, {row["state"]}')
+        ipAddresses = db.query(f'SELECT ipAddress FROM data WHERE city=\'{row["city"]}\' AND state=\'{row["state"]}\' GROUP BY ipAddress ORDER BY ipAddress')
+        for ipAddress in ipAddresses:
+            print(f'   {ipAddress["ipAddress"]}')
+        print()
+    print()
+
 def WatchtimeHistogram():
     result = db.query("SELECT watchTimeMinutes FROM data")
     watchtimes = []
@@ -194,7 +223,7 @@ def GetWeekNumbers():
 
 def GetDatestamps():
     ret = []
-    result = db.query("SELECT localDatestamp FROM data GROUP BY localDatestamp ORDER BY localDatestamp")
+    result = db.query("SELECT localDatestamp FROM data WHERE weekday>=5 GROUP BY localDatestamp ORDER BY localDatestamp")
     for row in result:
         ret.append(row["localDatestamp"])
     return ret
@@ -219,6 +248,8 @@ if __name__ == "__main__":
     Load_Database()
     CountByDateAndService()
     CountTopTenLocations()
+    CountLocationsByService()
+    #GetIPsTopTenLocations()
     exit()
 
     datapoints = {}
