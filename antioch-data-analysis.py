@@ -44,28 +44,53 @@ def Load_Database():
         for filename in files:
             if filename.endswith(".csv"):
                 with open(os.path.join(root, filename), 'r') as f:
+                    resiDataType = 0;
                     firstRow = True
                     csvReader = csv.reader(f, delimiter=',', quotechar='"')
                     for row in csvReader:
                         if firstRow:
+                            if row[0] == "timestamp":
+                                resiDataType = 0;
+                            elif row[0] == "eventId":   # Resi changed their data export format on (or around) 8/16/2021
+                                resiDataType = 1;
                             firstRow = False
                         else:
-                            table.insert(dict(timestamp=row[0],
-                                              localDatestamp=datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).date(),
-                                              ipAddress=row[1],
-                                              city=row[2],
-                                              state=row[3],
-                                              country=row[4],
-                                              latitude=row[5],
-                                              longitude=row[6],
-                                              watchTimeMinutes=row[7],
-                                              resolution=row[8],
-                                              userAgent=row[9],
-                                              service=filename[:-4],
-                                              weekNumber=
-                                              datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(
-                                                  tzinfo=from_zone).astimezone(to_zone).isocalendar()[1],
-                                              weekday=datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).weekday()))
+                            if resiDataType == 0:
+                                table.insert(dict(timestamp=row[0],
+                                                  localDatestamp=datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).date(),
+                                                  ipAddress=row[1],
+                                                  city=row[2],
+                                                  state=row[3],
+                                                  country=row[4],
+                                                  latitude=row[5],
+                                                  longitude=row[6],
+                                                  watchTimeMinutes=row[7],
+                                                  resolution=row[8],
+                                                  userAgent=row[9],
+                                                  service=filename[:-4],
+                                                  weekNumber=
+                                                  datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(
+                                                      tzinfo=from_zone).astimezone(to_zone).isocalendar()[1],
+                                                  weekday=datetime.strptime(str(row[0])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).weekday()))
+                            elif resiDataType == 1:
+                                table.insert(dict(timestamp=row[3],
+                                                  localDatestamp=datetime.strptime(str(row[3])[0:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=from_zone).astimezone(to_zone).date(),
+                                                  ipAddress=row[5],
+                                                  city=row[6],
+                                                  state=row[7],
+                                                  country=row[8],
+                                                  latitude=row[9],
+                                                  longitude=row[10],
+                                                  watchTimeMinutes=float(row[11])/60,
+                                                  resolution=row[13],
+                                                  userAgent=row[12],
+                                                  service=filename[:-4],
+                                                  weekNumber=
+                                                  datetime.strptime(str(row[3])[0:19], '%Y-%m-%dT%H:%M:%S').replace(
+                                                      tzinfo=from_zone).astimezone(to_zone).isocalendar()[1],
+                                                  weekday=datetime.strptime(str(row[3])[0:19],
+                                                                            '%Y-%m-%dT%H:%M:%S').replace(
+                                                      tzinfo=from_zone).astimezone(to_zone).weekday()))
 
 
 def Is_VPN():
